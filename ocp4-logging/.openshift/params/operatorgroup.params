@@ -1,2 +1,0 @@
-NAME=openshift-logging-operatorgroup
-TARGET_NAMESPACE=openshift-logging

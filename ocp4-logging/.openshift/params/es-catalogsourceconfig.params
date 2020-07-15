@@ -1,3 +1,0 @@
-NAME=elasticsearch-operator
-OPERATOR_NAMESPACE=openshift-operators
-OPERATORS=elasticsearch-operator

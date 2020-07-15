@@ -1,4 +1,0 @@
-NAME=cluster-logging
-OPERATOR_NAME=cluster-logging
-OPERATOR_NAMESPACE=openshift-logging
-CATALOG_SOURCE_NAME=cluster-logging-operator

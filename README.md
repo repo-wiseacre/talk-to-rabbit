@@ -1,104 +1,130 @@
-[![Build Status](https://prow-default.apps.ci-1.cop.rht-labs.com/badge.svg?jobs=cq-daily-master)](https://prow-default.apps.ci-1.cop.rht-labs.com/?job=cq-daily-master)
-[![License](https://img.shields.io/hexpm/l/plug.svg?maxAge=2592000)]()
+# RabbitMQ Cluster in Openshift
 
-# Containers Quickstarts by Red Hat's Community of Practice
+This demonstration describes how to create a RabbitMQ cluster in Openshift.
 
-This repository is meant to help bootstrap users of the OpenShift Container Platform to get started in building and using Source-to-Image to build applications to run in OpenShift.
+![RabbitMQ](images/RabbitMQ-logo.svg "RabbitMQ")
 
-For more details on what a _Quickstart_ is, please read our [contribution guide](./CONTRIBUTING.md).
+## Requirements
+1. OpenShift Container Platform v3.6 or newer (we're using [this feature](https://docs.openshift.com/container-platform/3.6/dev_guide/managing_images.html#using-is-with-k8s)).
+2. This example is configured to use a `PersistentVolume` for storing cluster and message data. Thus it is a requirement that Openshift is configured to support [Persistent Volumes](https://docs.openshift.com/container-platform/3.11/dev_guide/persistent_volumes.html) and that there are PVs with at least `ReadWriteOnce` (RWO) access available.
 
-## What's In This Repo?
+3. This example is also using the [OpenShift Applier](https://github.com/redhat-cop/openshift-applier) to build and deploy RabbitMQ. As a result you'll need to have [ansible installed](http://docs.ansible.com/ansible/latest/intro_installation.html).
 
-This repo contains OpenShift related quickstarts of several different flavors.
+## OpenShift objects
+The openshift-applier will create the following OpenShift objects:
+* A Project named `rabbitmq` 
+* Two ImageStreams `rabbitmq` and `ubi` (see [.openshift/templates/builds/template.yml](.openshift/templates/builds/template.yml) and [.openshift/templates/imagestreams/images.yml](.openshift/templates/imagestreams/images.yml))
+* A BuildConfig named `rabbitmq` (see [.openshift/templates/builds/template.yml](.openshift/templates/builds/template.yml))
+* A RoleBinding named `rabbitmq` (see [.openshift/templates/deployments/template.yml](.openshift/templates/deployments/template.yml))
+* A Service named `rabbitmq` (see [.openshift/templates/deployments/template.yml](.openshift/templates/deployments/template.yml))
+* A ConfigMap named `rabbitmq-config`(see [.openshift/templates/configmaps/config.yml](.openshift/templates/configmaps/config.yml))
+* A StatefulSet named `rabbitmq` (see [.openshift/templates/deployments/template.yml](.openshift/templates/deployments/template.yml))
 
-### Reference Implementations
+## Parameters
+| NAME                         | DESCRIPTION                         | VALUE
+| ---------------------------- | ----------------------------------- | ---------------------------------------------------- |
+| APPLICATION_NAME             | The name for the application        | rabbitmq                                             |
+| CONTEXT_DIR                  | Path within Git project to build    | rabbitmq                                             |
+| ERLANG_VERSION               | Erlang version to use               | 22.1.4                                               |
+| FROM_IMAGE                   | Docker image to build from          | ubi:7.7                                            |
+| RABBITMQ_VERSION             | RabbitMQ version to build           | 3.8.0                                                |
+| SOURCE_REPOSITORY_REF        | Git branch/tag reference            | master                                               |
+| SOURCE_REPOSITORY_URL        | Git source URI for application      | https://github.com/redhat-cop/containers-quickstarts |
 
-A set of examples of deploying various technologies on OpenShift
+`ERLANG_VERSION`& `RABBITMQ_VERSION` are passed on to the buildconfig thus these versions can be controlled in the build.
+This is the equivivalent of docker build --build-arg ERLANG_VERSION=19.3.6` to a docker build.
 
-* [MongoDB Cluster StatefulSet](./mongodb)
-* [RabbitMQ Cluster StatefulSet](./rabbitmq)
-* [GitLab CE Deployment](./gitlab-ce)
-* [SonarQube](./sonarqube)
-* [Zalenium](./zalenium)
+## Deploying
 
-### Custom S2I Base Images
+### Helm chart
+1. Clone this repository:
+   `git clone https://github.com/redhat-cop/containers-quickstarts`
+2. `cd containers-quickstarts/rabbitmq`
+3. `oc new-project rabbitmq`
+4. `helm install rabbitmq chart`
 
-A collection of custom built S2I base images
+**_NOTE:_** This image is currently not compatible with https://github.com/bitnami/charts/tree/master/bitnami/rabbitmq but this might change in the future.
 
-* [GoWS](./build-s2i-gows)
-* [Jekyll](./build-s2i-jekyll)
-* [WebSphere Liberty](./build-s2i-liberty)
-* [Play Framework](./build-s2i-play)
-* [Python Kopf Operator Framework](./build-s2i-python-kopf)
+### Build and deploy using Openshift Applier
+1. Clone this repository:
+   `git clone https://github.com/redhat-cop/containers-quickstarts`
+2. `cd containers-quickstarts/rabbitmq`
+3. Run `ansible-galaxy install -r requirements.yml --roles-path=roles`
+4. Login to Openshift: `oc login -u <username> https://master.example.com:8443`
+5. Run openshift-applier: `ansible-playbook -i .applier/ roles/openshift-applier/playbooks/openshift-cluster-seed.yml`
 
-### Jenkins Slave Images
+## Verify your pods are running
+```
+$ oc get pod -n rabbitmq
+NAME               READY     STATUS      RESTARTS   AGE
+rabbitmq-0         1/1       Running     0          1m
+rabbitmq-1         1/1       Running     0          1m
+rabbitmq-1-build   0/1       Completed   0          1m
+rabbitmq-2         1/1       Running     0          1m
+```
 
-A set of images we've developed for running as slave pods in a Jenkins Pipeline on OpenShift
+## Verify your RabbitMQ Cluster
+```
+$ oc rsh rabbitmq-1 rabbitmqctl cluster_status --formatter json | tail -1 | jq '{"alarms": .alarms,"running_nodes": .running_nodes,"versions": .versions}'
+{
+  "alarms": [],
+  "running_nodes": [
+    "rabbit@rabbitmq-2.rabbitmq.rabbitmq.svc.cluster.local",
+    "rabbit@rabbitmq-0.rabbitmq.rabbitmq.svc.cluster.local",
+    "rabbit@rabbitmq-1.rabbitmq.rabbitmq.svc.cluster.local"
+  ],
+  "versions": {
+    "rabbit@rabbitmq-0.rabbitmq.rabbitmq.svc.cluster.local": {
+      "erlang_version": "22.1.4",
+      "rabbitmq_version": "3.8.0"
+    },
+    "rabbit@rabbitmq-1.rabbitmq.rabbitmq.svc.cluster.local": {
+      "erlang_version": "22.1.4",
+      "rabbitmq_version": "3.8.0"
+    },
+    "rabbit@rabbitmq-2.rabbitmq.rabbitmq.svc.cluster.local": {
+      "erlang_version": "22.1.4",
+      "rabbitmq_version": "3.8.0"
+    }
+  }
+}
+```
 
-* [Ansible Slave](./jenkins-slaves/jenkins-slave-ansible)
-* [GoLang](./jenkins-slaves/jenkins-slave-golang)
-* [Image Promotion](./jenkins-slaves/jenkins-slave-image-mgmt)
-* [Extended Maven Slave](./jenkins-slaves/jenkins-slave-mvn)
-* [Ruby](./jenkins-slaves/jenkins-slave-ruby)
-* [Arachni](./jenkins-slaves/jenkins-slave-arachni)
-* [Gradle](./jenkins-slaves/jenkins-slave-gradle)
-* [MongoDB](./jenkins-slaves/jenkins-slave-mongodb)
-* [Node](./jenkins-slaves/jenkins-slave-npm)
-* [Python](./jenkins-slaves/jenkins-slave-python)
-* [ZAP](./jenkins-slaves/jenkins-slave-zap)
+## Testing
+This quickstart is using [bats](/bats-core/bats-core) for unit and acceptance testing of the included Helm chart.
 
-### Customized Jenkins Masters
+### Unit testing
+The unit tests will test features of the Helm chart and also requires [yq](https://github.com/mikefarah/yq).
+```
+bats test/unit
+ ✓ configmap: three config files defined
+ ✓ rolebinding: default serviceaccount
+ ✓ rolebinding: custom serviceaccount
+ ✓ service: enabled by default
+ ✓ service: name match release name
+...
+ ✓ statefulset: default tolerations
+ ✓ statefulset: custom tolerations
 
-A set of buildConfigs for building custom Jenkins images for OpenShift.
+41 tests, 0 failures
+```
 
-* [Jenkins Master with the Hygieia Plugin](./jenkins-masters/hygieia-plugin)
+### Acceptance testing
+The acceptance tests will deploy the RabbitMQ cluster using the Helm chart and assumes you have access to an OpenShift cluster (v3.11+) with at least self-provisioner access (it will create a new namespace).
+You will also need to install [jq](https://github.com/stedolan/jq) and at the moment you will need to use Bats from the master branch as the test require features added after the latest Bats' release.
+```
+bats test/acceptance
+ ✓ rabbitmq/ha: should have 'hostname' package installed
+ ✓ rabbitmq/ha: should have $LANG set to 'en_US.UTF-8'
+ ✓ rabbitmq/ha: should not have any alarms
+ ✓ rabbitmq/ha: fail if number of replicas aren't ready
+ ✓ rabbitmq/ha: should run on different cluster nodes
+ ✓ rabbitmq/ha: should have a three node cluster
 
-### Gitlab Runners
+6 tests, 0 failures
+```
 
-Gitlab Runners for your [Gitlab CI/CD](https://docs.gitlab.com/runner/).
-
-* [UBI 7](./ubi7-gitlab-runner)
-
-### Utilities
-
-* [UBI 8 Asciidoctor](./utilities/ubi8-asciidoctor)
-* [UBI 8 Bats](./utilities/ubi8-bats)
-* [UBI 8 Git](./utilities/ubi8-git)
-* [UBI 8 Google API Pyton Client](./utilities/ubi8-google-api-python-client)
-
-### Developer Tools
-
-* [Tool Box](./tool-box) - An OpenShift deployable container image that provides some necessary developer tools
-* [motepair](./motepair) - Remote pair programming server and plugin for [Atom](https://atom.io/)
-
-## Github Actions
-
-To enable actions in your fork:
-1. Fork this repository
-2. Actions -> Click the button to enable
-3. Settings -> Secrets
-
-| Secret              | Description                                          |
-|---------------------| -----------------------------------------------------|
-| REGISTRY_URI        | Registry to push images to, ex: `quay.io`            |
-| REGISTRY_REPOSITORY | Repository to push images to, ex: your quay username |
-| REGISTRY_USERNAME   | Username used to push to registry                    |
-| REGISTRY_PASSWORD   | Password used to push to registry                    |
-
->**NOTE:** It is recommended to use a service account for registry credentials, for example quay.io can create a robot account associated with your personal account.
-
-## Related Content
-
-* [Container Pipelines](https://github.com/redhat-cop/container-pipelines) - A set of Jenkins piplines for OpenShift
-* [Labs CI/CD](https://github.com/rht-labs/labs-ci-cd) - A comprehensive end to end pipeline using many modern testing and quality tools. Suitable for OpenShift v3.x
-* [Labs Ubiquitous Journey](https://github.com/rht-labs/ubiquitous-journey) - (The New and Improved _Labs CI/CD_ using GitOps for OpenShift v4.x) A collection of ArgoCD apps for:
-  *  Boostrapping a cluster with some projects, roles, bindings and creating an ArgoCD instance using the Operator
-  *  Deployments for an end to end pipeline using many modern testing and quality tools such as Jenkins, Nexus, Sonarqube etc
-  *  Project management tooling such as Wekan and Mattermost Chat
-* [Labs Helm Charts](https://github.com/rht-labs/helm-charts) - A library of OpenShift ready Helm3 Charts
-* [OpenShift Templates](https://github.com/rht-labs/openshift-templates) - A library of OpenShift template examples & references
-* [OpenShift Applier](https://github.com/redhat-cop/openshift-applier) - An automation framework for keeping manifests and templates applied to a cluster
-
-## Contributing
-
-Checkout out our [contribution guide](./CONTRIBUTING.md) for more details on how to contribute content to this repo.
+## Tear everything down
+`helm uninstall rabbitmq`
+or
+`oc delete project rabbitmq`

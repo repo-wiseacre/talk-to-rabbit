@@ -1,8 +1,0 @@
-/.project
-.DS_Store
-.idea
-**/galaxy/
-roles
-*.swp
-__pycache__
-.odo
